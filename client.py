@@ -27,20 +27,23 @@ def main():
     while True:
         command = input("Enter command: ")
         client_socket.sendall(command.encode())
+        response = client_socket.recv(BUFFER_SIZE).decode()
+
+        if response.startswith('230'):
+            # Set the connection to 8-bit binary data mode
+            client_socket.sendall("TYPE I\r\n".encode())
+            # Set the connection to stream mode
+            client_socket.sendall("MODE S\r\n".encode())
+            # Set the connection to file-oriented mode
+            client_socket.sendall("STRU F\r\n".encode())
 
         if command.startswith('PASV'):
-            response = client_socket.recv(BUFFER_SIZE).decode()
             print("Server response:", response)
-            if response.startswith('230'):
-                client_socket.sendall("TYPE I\r\n".encode())
-                client_socket.sendall("MODE S\r\n".encode())
-                client_socket.sendall("STRU F\r\n".encode())
             data_port = parse_pasv_response(response)
             data_socket = s.socket(s.AF_INET, s.SOCK_STREAM)
             data_socket.connect((SERVER_HOST, data_port))
 
         elif data_socket:
-            response = client_socket.recv(BUFFER_SIZE).decode()
             print("Server response:", response)
             if response.startswith('150'):
                 if command.startswith('LIST'):
@@ -55,7 +58,6 @@ def main():
                 data_socket = None
 
         else:
-            response = client_socket.recv(BUFFER_SIZE).decode()
             print("Server response:", response)
 
         if command == 'QUIT':
