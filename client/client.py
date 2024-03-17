@@ -68,8 +68,8 @@ def main():
                     handle_data_transfer(data_socket, command)
                     # Close data socket after data transfer
                     data_socket.close()
-                    # # Reset data socket to None
-                    # data_socket = None
+                    # Reset data socket to None
+                    data_socket = None
                 else:
                     data_socket.close()
 
@@ -82,8 +82,7 @@ def main():
                 break
         client_socket.close()
     except (ConnectionResetError, OSError):
-        # Close client socket
-        client_socket.close()
+        pass
 
 
 # Function to set FTP connection modes
