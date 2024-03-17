@@ -34,52 +34,56 @@ def main():
     # Initialize data socket
     data_socket = None
 
-    # Main loop to interact with the server
-    while True:
-        # Prompt user to enter command
-        command = input("Enter command: ") + "\r\n"
-        # Send command to server
-        client_socket.sendall(command.encode())
-        # Receive response from server and decode it
-        response = client_socket.recv(BUFFER_SIZE).decode()
+    try:
+        # Main loop to interact with the server
+        while True:
+            # Prompt user to enter command
+            command = input("Enter command: ") + "\r\n"
+            # Send command to server
+            client_socket.sendall(command.encode())
+            # Receive response from server and decode it
+            response = client_socket.recv(BUFFER_SIZE).decode()
 
-        # Handle different types of server responses
-        if response.startswith('230'):
-            # Print server response
-            print("Server response:", response)
-            # Set FTP connection modes
-            set_connection_modes(client_socket)
+            # Handle different types of server responses
+            if response.startswith('230'):
+                # Print server response
+                print("Server response:", response)
+                # Set FTP connection modes
+                set_connection_modes(client_socket)
 
-        elif command.startswith('PASV'):
-            # Print server response
-            print("Server response:", response)
-            # Parse PASV response and extract data port
-            data_port = parse_pasv_response(response)
-            # Create data socket and connect to server host and data port
-            data_socket = s.socket(s.AF_INET, s.SOCK_STREAM)
-            data_socket.connect((SERVER_HOST, data_port))
+            elif command.startswith('PASV'):
+                # Print server response
+                print("Server response:", response)
+                # Parse PASV response and extract data port
+                data_port = parse_pasv_response(response)
+                # Create data socket and connect to server host and data port
+                data_socket = s.socket(s.AF_INET, s.SOCK_STREAM)
+                data_socket.connect((SERVER_HOST, data_port))
 
-        elif data_socket:
-            # Print server response
-            print("Server response:", response)
-            if response.startswith('150'):
-                # Handle data transfer based on the command
-                handle_data_transfer(client_socket, data_socket, command)
-                # Close data socket after data transfer
-                data_socket.close()
-                # Reset data socket to None
-                data_socket = None
+            elif data_socket:
+                # Print server response
+                print("Server response:", response)
+                if response.startswith('150'):
+                    # Handle data transfer based on the command
+                    handle_data_transfer(data_socket, command)
+                    # Close data socket after data transfer
+                    data_socket.close()
+                    # # Reset data socket to None
+                    # data_socket = None
+                else:
+                    data_socket.close()
 
-        else:
-            # Print server response
-            print("Server response:", response)
+            else:
+                # Print server response
+                print("Server response:", response)
 
-        # Check if the user wants to quit
-        if command.strip() == 'QUIT':
-            break
-
-    # Close client socket
-    client_socket.close()
+            # Check if the user wants to quit
+            if command.strip() == 'QUIT':
+                break
+        client_socket.close()
+    except (ConnectionResetError, OSError):
+        # Close client socket
+        client_socket.close()
 
 
 # Function to set FTP connection modes
@@ -99,15 +103,13 @@ def set_connection_modes(client_socket):
 def parse_pasv_response(response):
     # Split PASV response and extract parts
     parts = response.split('(')[1].split(')')[0].split(',')
-    # Extract IP address
-    ip_address = '.'.join(parts[:4])
     # Calculate data port
     port = (int(parts[4]) * 256) + int(parts[5])
     return port
 
 
 # Function to handle data transfer based on the command
-def handle_data_transfer(client_socket, data_socket, command):
+def handle_data_transfer(data_socket, command):
     if command.startswith('LIST'):
         # Receive directory listing from server
         receive_list(data_socket)

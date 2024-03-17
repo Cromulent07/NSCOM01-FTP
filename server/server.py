@@ -70,7 +70,7 @@ REPLIES = {
     421: '421 Service not available, closing control connection.\r\n',
     425: '425 Can\'t open data connection.\r\n',
     426: '426 Connection closed; transfer aborted.\r\n',
-    430: 'Invalid username or password.\r\n',
+    430: '430 Invalid username or password.\r\n',
     450: '450 Requested file action not taken.\r\n',
     451: '451 Requested action aborted: local error in processing.\r\n',
     452: '452 Requested action not taken.\r\n',
@@ -107,33 +107,41 @@ def handle_client(conn):
         cmd_parts = command.split()
         # Check if command is 'USER'
         if cmd_parts[0] == 'USER':
-            # Check if username exists in the list of authorized users
-            if cmd_parts[1] in USERS:
-                user = cmd_parts[1]
-                # Send authentication response to client
-                response = REPLIES[331]
-                conn.sendall(response.encode())
-            else:
-                # Send error response to client
-                response = REPLIES[430]
+            try:
+                # Check if username exists in the list of authorized users
+                if cmd_parts[1] in USERS:
+                    user = cmd_parts[1]
+                    # Send authentication response to client
+                    response = REPLIES[331]
+                    conn.sendall(response.encode())
+                else:
+                    # Send error response to client
+                    response = REPLIES[430]
+                    conn.sendall(response.encode())
+            except IndexError:
+                response = REPLIES[550]
                 conn.sendall(response.encode())
         elif cmd_parts[0] == 'PASS' and user:
-            # Check if password matches the username
-            if USERS[user] == cmd_parts[1]:
-                authenticated = True
-                response = REPLIES[230]
-                conn.sendall(response.encode())
+            try:
+                # Check if password matches the username
+                if USERS[user] == cmd_parts[1]:
+                    authenticated = True
+                    response = REPLIES[230]
+                    conn.sendall(response.encode())
 
-                # Receive and decode client's transfer type, mode, and
-                # structure
-                type = conn.recv(BUFFER_SIZE).decode().split()[1]
-                conn.sendall(REPLIES[200].encode())
-                mode = conn.recv(BUFFER_SIZE).decode().split()[1]
-                conn.sendall(REPLIES[200].encode())
-                structure = conn.recv(BUFFER_SIZE).decode().split()[1]
-                conn.sendall(REPLIES[200].encode())
-            else:
-                response = REPLIES[530]
+                    # Receive and decode client's transfer type, mode, and
+                    # structure
+                    type = conn.recv(BUFFER_SIZE).decode().split()[1]
+                    conn.sendall(REPLIES[200].encode())
+                    mode = conn.recv(BUFFER_SIZE).decode().split()[1]
+                    conn.sendall(REPLIES[200].encode())
+                    structure = conn.recv(BUFFER_SIZE).decode().split()[1]
+                    conn.sendall(REPLIES[200].encode())
+                else:
+                    response = REPLIES[530]
+            except IndexError:
+                response = REPLIES[550]
+                conn.sendall(response.encode())
         elif cmd_parts[0] == 'QUIT':
             response = REPLIES[200]
             conn.sendall(response.encode())
@@ -162,7 +170,7 @@ def handle_client(conn):
                 os.chdir(cmd_parts[1])
                 response = f"250 Directory changed to {cmd_parts[1]}"
                 conn.sendall(response.encode())
-            except FileNotFoundError:
+            except (FileNotFoundError, IndexError):
                 response = REPLIES[550]
                 conn.sendall(response.encode())
         elif cmd_parts[0] == 'CDUP':
@@ -171,61 +179,93 @@ def handle_client(conn):
             response = REPLIES[200]
             conn.sendall(response.encode())
         elif cmd_parts[0] == 'MKD':
-            # Create a new directory
-            os.mkdir(cmd_parts[1])
-            response = f"257 Directory created: {cmd_parts[1]}"
-            conn.sendall(response.encode())
+            try:
+                # Create a new directory
+                os.mkdir(cmd_parts[1])
+                response = f"257 Directory created: {cmd_parts[1]}"
+                conn.sendall(response.encode())
+            except IndexError:
+                response = REPLIES[550]
+                conn.sendall(response.encode())
         elif cmd_parts[0] == 'RMD':
-            # Remove specified directory
-            os.rmdir(cmd_parts[1])
-            response = f"250 Directory deleted: {cmd_parts[1]}"
-            conn.sendall(response.encode())
+            try:
+                # Remove specified directory
+                os.rmdir(cmd_parts[1])
+                response = f"250 Directory deleted: {cmd_parts[1]}"
+                conn.sendall(response.encode())
+            except IndexError:
+                response = REPLIES[550]
+                conn.sendall(response.encode())
         elif cmd_parts[0] == 'PASV':
-            # Enter passive mode for data connection
-            data_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            data_socket.bind((SERVER_HOST, 0))
-            data_socket.listen(1)
-            data_port = data_socket.getsockname()[1]
-            ip_address = SERVER_HOST.replace('.', ',')
-            response = f"227 Entering Passive Mode ({ip_address},{
-                data_port // 256},{data_port % 256}).\r\n"
-            conn.sendall(response.encode())
-            data_conn, _ = data_socket.accept()
+            try:
+                # Enter passive mode for data connection
+                data_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                data_socket.bind((SERVER_HOST, 0))
+                data_socket.listen(1)
+                data_port = data_socket.getsockname()[1]
+                ip_address = SERVER_HOST.replace('.', ',')
+                response = f"227 Entering Passive Mode ({ip_address},{
+                    data_port // 256},{data_port % 256}).\r\n"
+                conn.sendall(response.encode())
+                data_conn, _ = data_socket.accept()
+            except ConnectionAbortedError:
+                response = REPLIES[550]
+                conn.sendall(response.encode())
         elif cmd_parts[0] == 'LIST':
             # Send directory listing to the client
             dir_output = os.popen('dir').read().replace('\n', '\r\n')
             response = f"{REPLIES[200]}\r\n{dir_output}\r\n"
             conn.sendall(response.encode())
         elif cmd_parts[0] == 'RETR':
-            # Retrieve a file from the server
-            filename = cmd_parts[1]
-            if os.path.exists(filename):
-                if data_conn:
-                    response = REPLIES[150]
-                    conn.sendall(response.encode())
-                    send_file(data_conn, filename)
-                    data_conn.close()
+            # Check if the command is 'RETR' (retrieve)
+            try:
+                # Retrieve a file from the server
+                filename = cmd_parts[1]
+                if os.path.exists(filename):
+                    if data_conn:
+                        # Data connection established, send file
+                        response = REPLIES[150]
+                        conn.sendall(response.encode())
+                        send_file(data_conn, filename)
+                        data_conn.close()
+                    else:
+                        # Data connection not established
+                        response = REPLIES[425]
+                        conn.sendall(response.encode())
                 else:
-                    response = REPLIES[425]
+                    # File not found
+                    response = REPLIES[550]
                     conn.sendall(response.encode())
-            else:
+            except (IndexError, OSError):
+                # Missing filename argument
                 response = REPLIES[550]
                 conn.sendall(response.encode())
         elif cmd_parts[0] == 'DELE':
-            # Delete a file
-            os.remove(cmd_parts[1])
-            response = f"250 File deleted: {cmd_parts[1]}"
-            conn.sendall(response.encode())
-        elif cmd_parts[0] == 'STOR':
-            if data_conn:
-                # Store a file on the server
-                filename = cmd_parts[1]
-                response = REPLIES[150]
+            try:
+                # Delete a file
+                os.remove(cmd_parts[1])
+                response = f"250 File deleted: {cmd_parts[1]}"
                 conn.sendall(response.encode())
-                receive_file(data_conn, filename)
-                data_conn.close()
-            else:
-                response = REPLIES[425]
+            except IndexError:
+                response = REPLIES[550]
+                conn.sendall(response.encode())
+        elif cmd_parts[0] == 'STOR':
+            # Check if the command is 'STOR' (store)
+            try:
+                if data_conn:
+                    # Store a file on the server
+                    filename = cmd_parts[1]
+                    response = REPLIES[150]
+                    conn.sendall(response.encode())
+                    receive_file(data_conn, filename)
+                    data_conn.close()
+                else:
+                    # Data connection not established
+                    response = REPLIES[425]
+                    conn.sendall(response.encode())
+            except (IndexError, OSError):
+                # Missing filename argument
+                response = REPLIES[550]
                 conn.sendall(response.encode())
         elif cmd_parts[0] == 'HELP':
             # Provide help information
@@ -237,6 +277,7 @@ def handle_client(conn):
             conn.sendall(response.encode())
             break
         else:
+            # Invalid command
             response = REPLIES[500]
             conn.sendall(response.encode())
 
@@ -245,21 +286,29 @@ def handle_client(conn):
 def send_file(conn, filename):
     # Open file in binary mode and send it to the client
     with open(filename, 'rb') as f:
+        # Read data from the file and send it to the client
         while True:
+            # Read a chunk of data from the file
             data = f.read(BUFFER_SIZE)
+            # If no data read, exit loop
             if not data:
                 break
+            # Send the data chunk to the client
             conn.sendall(data)
 
 
 # Function to receive a file from the client
 def receive_file(conn, filename):
-    # Receive file from the client and write it to disk
+    # Open the file in binary write mode
     with open(filename, 'wb') as f:
+        # Loop until there's no more data to receive
         while True:
+            # Receive data from the client
             data = conn.recv(BUFFER_SIZE)
+            # If no data received, exit loop
             if not data:
                 break
+            # Write received data to the file
             f.write(data)
 
 
@@ -270,6 +319,10 @@ def main():
     # Check if server port is specified in command-line arguments
     if len(sys.argv) == 2:
         SERVER_PORT = int(sys.argv[1])
+    else:
+        # Print usage message if the port number is not provided
+        print("Usage: server.py <port>")
+        return
 
     # Create a server socket and bind it to host and port
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
