@@ -44,47 +44,17 @@ QUIT - close socket\r\n'''
 
 # Define dictionary REPLIES for FTP server replies
 REPLIES = {
-    110: '110 Restart marker reply.\r\n',
-    120: '120 Service ready in nnn minutes.\r\n',
-    125: '125 Data connection already open; transfer starting.\r\n',
     150: '150 File status okay; about to open data connection.\r\n',
     200: '200 Command okay.\r\n',
-    202: '202 Command not implemented, superfluous at this site.\r\n',
-    211: '211 System status, or system help reply.\r\n',
-    212: '212 Directory status.\r\n',
-    213: '213 File status.\r\n',
     214: '214 Help message.\r\n',
-    215: '215 NAME system type.\r\n',
-    220: '220 Service ready for new user.\r\n',
-    221: '221 Service closing control connection.\r\n',
-    225: '225 Data connection open; no transfer in progress.\r\n',
-    226: '226 Closing data connection.\r\n',
-    227: '227 Entering Passive Mode (h1,h2,h3,h4,p1,p2).\r\n',
     230: '230 User logged in, proceed.\r\n',
-    250: '250 Requested file action okay, completed.\r\n',
-    257: '257 "PATHNAME" created.\r\n',
     331: '331 User name okay, need password.\r\n',
-    332: '332 Need account for login.\r\n',
-    350: '350 Requested file action pending further information.\r\n',
     401: '401 Unauthorized, you are not logged in.\r\n',
-    421: '421 Service not available, closing control connection.\r\n',
-    425: '425 Can\'t open data connection.\r\n',
-    426: '426 Connection closed; transfer aborted.\r\n',
     430: '430 Invalid username or password.\r\n',
-    450: '450 Requested file action not taken.\r\n',
-    451: '451 Requested action aborted: local error in processing.\r\n',
-    452: '452 Requested action not taken.\r\n',
     500: '500 Syntax error, command unrecognized.\r\n',
-    501: '501 Syntax error in parameters or arguments.\r\n',
-    502: '502 Command not implemented.\r\n',
-    503: '503 Bad sequence of commands.\r\n',
-    504: '504 Command not implemented for that parameter.\r\n',
+    503: '503 Use PASV command to establish a data connection\r\n',
     530: '530 Not logged in.\r\n',
-    532: '532 Need account for storing files.\r\n',
     550: '550 Requested action not taken.\r\n',
-    551: '551 Requested action aborted: page type unknown.\r\n',
-    552: '552 Requested file action aborted.\r\n',
-    553: '553 Requested action not taken.\r\n',
 }
 
 
@@ -92,11 +62,7 @@ REPLIES = {
 def handle_client(conn):
     # Initialize authentication status, connection mode, and user information
     authenticated = False
-    pasv_mode = False
     data_conn = None
-    type = None
-    mode = None
-    structure = None
     user = None
 
     # Authentication loop
@@ -131,11 +97,11 @@ def handle_client(conn):
 
                     # Receive and decode client's transfer type, mode, and
                     # structure
-                    type = conn.recv(BUFFER_SIZE).decode().split()[1]
+                    conn.recv(BUFFER_SIZE).decode().split()[1]
                     conn.sendall(REPLIES[200].encode())
-                    mode = conn.recv(BUFFER_SIZE).decode().split()[1]
+                    conn.recv(BUFFER_SIZE).decode().split()[1]
                     conn.sendall(REPLIES[200].encode())
-                    structure = conn.recv(BUFFER_SIZE).decode().split()[1]
+                    conn.recv(BUFFER_SIZE).decode().split()[1]
                     conn.sendall(REPLIES[200].encode())
                 else:
                     response = REPLIES[530]
@@ -196,6 +162,15 @@ def handle_client(conn):
             except IndexError:
                 response = REPLIES[550]
                 conn.sendall(response.encode())
+        elif cmd_parts[0] == 'DELE':
+            try:
+                # Delete a file
+                os.remove(cmd_parts[1])
+                response = f"250 File deleted: {cmd_parts[1]}"
+                conn.sendall(response.encode())
+            except IndexError:
+                response = REPLIES[550]
+                conn.sendall(response.encode())
         elif cmd_parts[0] == 'PASV':
             try:
                 # Enter passive mode for data connection
@@ -212,10 +187,22 @@ def handle_client(conn):
                 response = REPLIES[550]
                 conn.sendall(response.encode())
         elif cmd_parts[0] == 'LIST':
-            # Send directory listing to the client
-            dir_output = os.popen('dir').read().replace('\n', '\r\n')
-            response = f"{REPLIES[200]}\r\n{dir_output}\r\n"
-            conn.sendall(response.encode())
+            try:
+                if data_conn:
+                    # Send directory listing to the client
+                    response = REPLIES[150]
+                    conn.sendall(response.encode())
+                    send_list(data_conn)
+                    # Close data connection and set it to None
+                    data_conn.close()
+                    data_conn = None
+                else:
+                    # Send response to open a data connection first
+                    response = REPLIES[503]
+                    conn.sendall(response.encode())
+            except OSError:
+                response = REPLIES[550]
+                conn.sendall(response.encode())
         elif cmd_parts[0] == 'RETR':
             # Check if the command is 'RETR' (retrieve)
             try:
@@ -227,10 +214,12 @@ def handle_client(conn):
                         response = REPLIES[150]
                         conn.sendall(response.encode())
                         send_file(data_conn, filename)
+                        # Close data connection and set it to None
                         data_conn.close()
+                        data_conn = None
                     else:
                         # Data connection not established
-                        response = REPLIES[425]
+                        response = REPLIES[503]
                         conn.sendall(response.encode())
                 else:
                     # File not found
@@ -238,15 +227,6 @@ def handle_client(conn):
                     conn.sendall(response.encode())
             except (IndexError, OSError):
                 # Missing filename argument
-                response = REPLIES[550]
-                conn.sendall(response.encode())
-        elif cmd_parts[0] == 'DELE':
-            try:
-                # Delete a file
-                os.remove(cmd_parts[1])
-                response = f"250 File deleted: {cmd_parts[1]}"
-                conn.sendall(response.encode())
-            except IndexError:
                 response = REPLIES[550]
                 conn.sendall(response.encode())
         elif cmd_parts[0] == 'STOR':
@@ -258,10 +238,12 @@ def handle_client(conn):
                     response = REPLIES[150]
                     conn.sendall(response.encode())
                     receive_file(data_conn, filename)
+                    # Close data connection and set it to None
                     data_conn.close()
+                    data_conn = None
                 else:
                     # Data connection not established
-                    response = REPLIES[425]
+                    response = REPLIES[503]
                     conn.sendall(response.encode())
             except (IndexError, OSError):
                 # Missing filename argument
@@ -312,6 +294,12 @@ def receive_file(conn, filename):
             f.write(data)
 
 
+def send_list(data_conn):
+    # Send directory listing to the client
+    dir_output = os.popen('dir').read().replace('\n', '\r\n')
+    data_conn.sendall(dir_output.encode())
+
+
 # Main function to start the FTP server
 def main():
     # Declare global variables
@@ -337,7 +325,7 @@ def main():
         # Accept incoming connections
         conn, addr = server_socket.accept()
         # Send initial response to client
-        conn.sendall(REPLIES[220].encode())
+        conn.sendall(f"220 Welcome to NSCOM01 FTP server!\r\n".encode())
         print(f"Connection from {addr}")
         # Spawn a new thread to handle client connection
         threading.Thread(target=handle_client, args=(conn,)).start()
