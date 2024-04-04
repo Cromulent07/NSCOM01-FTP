@@ -265,7 +265,7 @@ def handle_client(conn):
             response = REPLIES[500]
             conn.sendall(response.encode())
 
-        print(f'{user}: {' '.join(cmd_parts)}')
+        print(f"{user}: {' '.join(cmd_parts)}")
 
 
 # Function to send a file to the client
