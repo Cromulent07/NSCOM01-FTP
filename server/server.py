@@ -182,8 +182,7 @@ def handle_client(conn):
                 data_socket.listen(1)
                 data_port = data_socket.getsockname()[1]
                 ip_address = SERVER_HOST.replace('.', ',')
-                response = f"227 Entering Passive Mode ({ip_address},{
-                    data_port // 256},{data_port % 256}).\r\n"
+                response = f"227 Entering Passive Mode ({ip_address},{ data_port // 256},{data_port % 256}).\r\n"
                 conn.sendall(response.encode())
                 data_conn, _ = data_socket.accept()
             except ConnectionAbortedError:
