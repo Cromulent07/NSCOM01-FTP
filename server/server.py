@@ -1,5 +1,7 @@
 # Import os module for operating system-related functionalities
 import os
+# Import shutil module for recursive deletion of a directory
+import shutil
 # Import sys module for system-specific parameters and functions
 import sys
 # Import socket module for network communication
@@ -115,6 +117,7 @@ def handle_client(conn):
         else:
             response = REPLIES[401]
             conn.sendall(response.encode())
+    print(f'User {user} is connected!')
 
     # Main command loop
     while True:
@@ -156,7 +159,7 @@ def handle_client(conn):
         elif cmd_parts[0] == 'RMD':
             try:
                 # Remove specified directory
-                os.rmdir(cmd_parts[1])
+                shutil.rmtree(cmd_parts[1])
                 response = f"250 Directory deleted: {cmd_parts[1]}"
                 conn.sendall(response.encode())
             except IndexError:
@@ -262,6 +265,8 @@ def handle_client(conn):
             # Invalid command
             response = REPLIES[500]
             conn.sendall(response.encode())
+
+        print(f'{user}: {' '.join(cmd_parts)}')
 
 
 # Function to send a file to the client
